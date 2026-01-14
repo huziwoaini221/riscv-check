@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/alignment_cases",
+    "command": "gcc -c ptr_cast_bad.c -I/usr/include",
+    "file": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/alignment_cases/ptr_cast_bad.c"
+  },
+  {
+    "directory": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/alignment_cases",
+    "command": "gcc -c ptr_cast_ok.c -I/usr/include",
+    "file": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/alignment_cases/ptr_cast_ok.c"
+  }
+]

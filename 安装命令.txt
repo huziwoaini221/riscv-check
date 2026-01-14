@@ -1,0 +1,66 @@
+# libclang 安装命令
+
+## 方法 1：使用安装脚本（推荐）
+
+```bash
+bash /tmp/install_clang.sh
+```
+
+这个脚本会：
+- ✅ 自动更新软件包列表
+- ✅ 安装 clang、llvm、libclang-dev
+- ✅ 验证安装成功
+- ✅ 显示 libclang 库位置
+- ✅ 提示下一步操作
+
+---
+
+## 方法 2：手动安装（单条命令）
+
+```bash
+sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev clang-tools-extra
+```
+
+---
+
+## 方法 3：分步安装（更详细）
+
+```bash
+# 1. 更新软件包列表
+sudo apt-get update
+
+# 2. 安装 clang 和 libclang
+sudo apt-get install -y clang llvm libclang-dev
+
+# 3. 验证安装
+which clang
+clang --version
+
+# 4. 查找 libclang
+find /usr -name "libclang*.so*" 2>/dev/null | head -3
+```
+
+---
+
+## 安装完成后
+
+回到这里，运行测试：
+
+```bash
+cd /home/guoyan5216/r-v/riscv-check
+source .venv/bin/activate
+
+# 设置环境变量（如果需要）
+export LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu/
+
+# 测试完整功能
+riscv-check tests/fixtures/arch_cases/ -v
+```
+
+**预期结果**：应该检测到内联汇编和架构宏问题
+
+---
+
+## 选择一个方法执行即可！
+
+推荐使用**方法 1**（安装脚本），因为它会自动验证和提示。

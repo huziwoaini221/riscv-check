@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/arch_cases",
+    "command": "gcc -c asm_bad.c -I/usr/include",
+    "file": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/arch_cases/asm_bad.c"
+  },
+  {
+    "directory": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/arch_cases",
+    "command": "gcc -c macro_bad.c -I/usr/include",
+    "file": "/home/guoyan5216/r-v/riscv-check/tests/fixtures/arch_cases/macro_bad.c"
+  }
+]
