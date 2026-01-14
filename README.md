@@ -232,7 +232,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) fo
 
 ```bash
 # Development setup
-git clone https://github.com/yourusername/riscv-check
+git clone https://github.com/huziwoaini221/riscv-check
 cd riscv-check
 python3 -m venv .venv
 source .venv/bin/activate
@@ -282,7 +282,7 @@ Warnings:
 **Testimonial**:
 > "riscv-check identified a real issue that would have caused crashes on RISC-V hardware.
 > The analysis was fast, accurate, and the fix suggestions were spot on."
-> — [Case study available](https://github.com/yourusername/riscv-check/examples/htop)
+> — [Case study available](https://github.com/huziwoaini221/riscv-check/examples/htop)
 
 ---
 
@@ -355,9 +355,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 📞 Support
 
-- 🐛 [Report bugs](https://github.com/yourusername/riscv-check/issues)
-- 💡 [Feature requests](https://github.com/yourusername/riscv-check/discussions)
-- 📧 Email: your.email@example.com
+- 🐛 [Report bugs](https://github.com/huziwoaini221/riscv-check/issues)
+- 💡 [Feature requests](https://github.com/huziwoaini221/riscv-check/discussions)
+- 📧 Email: thelazypig321@qq.com
 
 ---
 
