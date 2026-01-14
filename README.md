@@ -200,7 +200,20 @@ Risk Score: **0-100** (higher is better)
 └─────────────────────────────────────────┘
 ```
 
-## 📋 Requirements
+## 📋 Requirements & Platform Support
+
+### Platform Support
+
+| Platform | Support Status | Notes |
+|----------|---------------|-------|
+| **Linux** | ✅ Fully Supported | Primary development platform |
+| **macOS** | ✅ Fully Supported | Tested and verified |
+| **Windows + WSL 2** | ✅ Recommended | Best Windows experience |
+| **Windows Native** | ⚠️ Experimental | Complex setup, not recommended |
+
+**Windows users**: See [Windows Installation Guide](docs/INSTALL_WINDOWS.md) (WSL 2 recommended)
+
+### System Requirements
 
 - Python 3.10+
 - clang + libclang
@@ -224,6 +237,7 @@ brew install riscv-tools
 ## 📚 Documentation
 
 - [Installation Guide](docs/INSTALL.md)
+- [Windows Installation Guide](docs/INSTALL_WINDOWS.md) (WSL 2 recommended)
 - [User Guide](docs/USAGE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Contributing](docs/CONTRIBUTING.md)

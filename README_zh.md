@@ -200,7 +200,20 @@ __asm__ volatile("movq %rax, %rbx");
 └─────────────────────────────────────────┘
 ```
 
-## 📋 环境要求
+## 📋 环境要求与平台支持
+
+### 平台支持
+
+| 平台 | 支持状态 | 说明 |
+|------|---------|------|
+| **Linux** | ✅ 完全支持 | 主要开发平台 |
+| **macOS** | ✅ 完全支持 | 经过测试验证 |
+| **Windows + WSL 2** | ✅ 推荐 | Windows 用户的最佳选择 |
+| **Windows 原生** | ⚠️ 实验性 | 配置复杂，不推荐 |
+
+**Windows 用户**：请参阅 [Windows 安装指南](docs/INSTALL_WINDOWS_zh.md)（推荐 WSL 2）
+
+### 系统要求
 
 - Python 3.10+
 - clang + libclang
@@ -224,6 +237,7 @@ brew install riscv-tools
 ## 📚 文档
 
 - [安装指南](docs/INSTALL.md)
+- [Windows 安装指南](docs/INSTALL_WINDOWS_zh.md)（推荐 WSL 2）
 - [使用指南](docs/USAGE.md)
 - [架构设计](docs/ARCHITECTURE.md)
 - [贡献指南](docs/CONTRIBUTING.md)
