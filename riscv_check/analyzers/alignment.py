@@ -134,13 +134,19 @@ class AlignmentAnalyzer(BaseAnalyzer):
         Yields:
             Issues found at this node or its children
         """
-        # Check for pointer casts
+        # Check for explicit pointer casts
         if node.kind in {
             CursorKind.CSTYLE_CAST_EXPR,
             CursorKind.CXX_REINTERPRET_CAST_EXPR,
             CursorKind.CXX_STATIC_CAST_EXPR,
         }:
             issue = self._check_pointer_cast(node)
+            if issue:
+                yield issue
+
+        # Check for implicit pointer casts (assignments)
+        if node.kind == CursorKind.ASSIGNMENT_OPERATOR:
+            issue = self._check_implicit_cast(node)
             if issue:
                 yield issue
 
@@ -277,6 +283,80 @@ class AlignmentAnalyzer(BaseAnalyzer):
             pass
 
         return False
+
+    def _check_implicit_cast(self, assign_expr) -> Optional[Issue]:
+        """Check for dangerous implicit pointer casts in assignments.
+
+        This detects cases like:
+            char** out;
+            out = xRealloc(...);  // void* → char** implicit cast
+
+        Args:
+            assign_expr: Assignment expression node
+
+        Returns:
+            Issue if implicit cast is dangerous, None otherwise
+        """
+        try:
+            # Get left and right operands of assignment
+            children = list(assign_expr.get_children())
+            if len(children) < 2:
+                return None
+
+            left_operand = children[0]
+            right_operand = children[1]
+
+            # Get types
+            left_type = left_operand.type
+            right_type = right_operand.type
+        except Exception:
+            return None
+
+        # Only check pointer-to-pointer assignments
+        try:
+            if left_type.kind != TypeKind.POINTER or right_type.kind != TypeKind.POINTER:
+                return None
+
+            left_pointee = left_type.get_pointee()
+            right_pointee = right_type.get_pointee()
+        except Exception:
+            return None
+
+        # Get alignment requirements
+        left_align = self.ALIGNMENT_MAP.get(left_pointee.kind, 1)
+        right_align = self.ALIGNMENT_MAP.get(right_pointee.kind, 1)
+
+        # Core rule: target alignment > source alignment is potentially dangerous
+        if left_align > right_align:
+            # Check if the right operand is from a safe memory allocation function
+            if self._is_safe_aligned_pointer(right_operand):
+                # This cast is safe - the pointer comes from an aligned allocator
+                return None
+
+            location = assign_expr.location
+            if location.file:
+                return Issue(
+                    rule_id=self.RULE_PTR_CAST,
+                    severity=Severity.ERROR,
+                    file=str(location.file.name),
+                    line=location.line,
+                    column=location.column,
+                    message=(
+                        f"Implicit cast from {right_pointee.spelling} "
+                        f"(align={right_align}) to {left_pointee.spelling} "
+                        f"(align={left_align}) may cause misaligned access"
+                    ),
+                    suggestion=(
+                        f"Use explicit cast with memcpy, or ensure alignment "
+                        f"using __attribute__((aligned({left_align})))"
+                    ),
+                    verification=(
+                        "Compile with -fsanitize=alignment or run "
+                        "under qemu-riscv64 to detect SIGBUS"
+                    ),
+                )
+
+        return None
 
     def _check_packed_struct(self, struct_decl) -> None:
         """Check if struct is packed and record it.
