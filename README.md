@@ -2,41 +2,48 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-> **Automated RISC-V migration risk detector for C/C++ projects**
+**Static analysis tool for detecting RISC-V migration issues in C/C++ projects**
 
 [![PyPI version](https://badge.fury.io/py/riscv-check.svg)](https://pypi.org/project/riscv-check/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## ⚡ What it does
+## Overview
 
-`riscv-check` automatically scans C/C++ projects and detects issues that cause:
+`riscv-check` scans C/C++ codebases and detects patterns that cause issues on RISC-V architecture:
 
-- **💥 Crashes** on RISC-V (misaligned memory access)
-- **❌ Build failures** (architecture-specific code)
-- **⚠️ Performance problems** (unoptimized patterns)
+- Misaligned memory access (SIGBUS on RISC-V)
+- Architecture-specific inline assembly
+- Missing RISC-V code paths
+- Unaligned pointer casts
 
-**The problem**: This code works on x86 but crashes on RISC-V:
+## Why This Tool Matters
+
+### The Problem
+
+This code works on x86_64 but crashes on RISC-V:
 
 ```c
 char *p = malloc(10);
 p++;
-int *i = (int*)p;  // 💥 SIGBUS on RISC-V!
-*i = 42;
+int *i = (int*)p;  // Misaligned address
+*i = 42;  // SIGBUS on RISC-V
 ```
 
-**The solution**: `riscv-check` finds it **before** you migrate.
+**Why**: x86_64 tolerates misalignment. RISC-V requires strict alignment for int (4-byte).
 
-## 🎯 Why use riscv-check?
+### The Solution
 
-| Traditional Approach | riscv-check |
-|---------------------|-------------|
-| 2-3 weeks manual audit | 10 minutes automated |
-| Find bugs during migration | Find bugs before migration |
-| Runtime crashes | Static detection |
-| Expensive trial-and-error | Precise, actionable reports |
+`riscv-check` detects these issues **before** migration through static analysis:
 
-## 🚀 Quick Start
+```bash
+$ riscv-check /path/to/project
+
+[ERROR] src/network.c:128 ALIGN_PTR_CAST
+  Casting char* to int* without alignment verification
+```
+
+## Quick Start
 
 ### Installation
 
@@ -50,201 +57,193 @@ pip install riscv-check
 # Scan a project
 riscv-check /path/to/project
 
-# Generate markdown report
-riscv-check /path/to/project --output report.md
+# Generate maintainer-style report (one screen, no emojis)
+riscv-check /path/to/project --output report.md --report-style maintainer
 
 # Skip cross-compilation validation
 riscv-check /path/to/project --no-compile
 ```
 
-### Example Output
+### Report Modes
 
-```
-$ riscv-check my-project/
+- `--report-style maintainer` (default): One-screen professional format
+- `--report-style concise`: Standard < 2 screen reports
+- `--report-style minimal`: Bug report only, < 1 screen
+- `--report-style verbose`: Detailed multi-page reports
 
-Scanning project... [████████████████████] 100% (1247 files)
+### Language Control
 
-RISC-V Migration Risk Report
-=============================
+- `--language en`: English only (no mixed languages)
+- `--language zh`: Chinese only
 
-Project: my-project/
-Files scanned: 1247
-Risk Score: 58/100 ⚠️  (NOT RECOMMENDED)
+## What It Detects
 
-Summary:
-  🔴 ERROR: 15 issues
-  🟡 WARN:  42 issues
-  🔵 INFO:  8 issues
+### 1. Misaligned Pointer Casts
 
-Critical Issues (must fix):
-  1. src/network.c:128 [ERROR] ALIGN_PACKED_FIELD
-     → Accessing packed struct member 'value' may cause SIGBUS
-
-  2. src/crypto.c:256 [ERROR] ALIGN_PTR_CAST
-     → Casting char* to int* without alignment guarantee
-
-  3. src/cpu.asm:12 [ERROR] ARCH_ASM
-     → Inline x86 assembly not portable to RISC-V
-
-Recommendation:
-  ❌ DO NOT migrate until critical ERRORs are fixed
-  ℹ️  Estimated fix time: 2-3 days
-
-Full report: /tmp/riscv-report-20250114.md
-```
-
-## 🔍 What it detects
-
-### 1. Misaligned Pointer Casts (CRITICAL)
-
-**Danger**: Casting pointers to stricter alignment requirements
+**Issue**: Casting pointers to stricter alignment requirements
 
 ```c
 // ERROR: Will crash on RISC-V
 char *p = get_buffer();
-p++;  // Misaligned address
-int *i = (int*)p;  // 💥
+p++;  // May become misaligned
+int *i = (int*)p;  // Requires 4-byte alignment
+*i = 42;  // SIGBUS if misaligned
 ```
 
-**Why it crashes**: `int` requires 4-byte alignment, but `p` might only be 1-byte aligned.
+**Detection**: AST-based static analysis tracking pointer sources and cast targets.
 
 ---
 
-### 2. Packed Struct Access (CRITICAL)
+### 2. Packed Struct Access
 
-**Danger**: Accessing non-char members of packed structs
+**Issue**: Accessing non-char members of packed structs
 
 ```c
-// ERROR: May crash on RISC-V
 struct __attribute__((packed)) Packet {
     char type;
     int value;  // Misaligned field
 };
 
-int x = packet->value;  // 💥
+int x = packet->value;  // SIGBUS on RISC-V
 ```
 
-**Why it crashes**: Packed structs disable alignment padding, leading to misaligned access.
+**Detection**: Packed struct field access patterns.
 
 ---
 
-### 3. Inline Assembly (ERROR)
+### 3. Inline Assembly
 
-**Danger**: Architecture-specific assembly code
+**Issue**: Architecture-specific assembly code
 
 ```c
-// ERROR: Not portable
+// ERROR: x86-specific
 __asm__ volatile("movq %rax, %rbx");
 ```
 
-**Why it fails**: x86 instructions don't work on RISC-V.
+**Detection**: Inline asm blocks, architecture-specific instructions.
 
 ---
 
-### 4. Architecture-Specific Macros (WARNING)
+### 4. Architecture Macros
 
-**Danger**: Code only compiled on specific architectures
+**Issue**: Code only compiled on specific architectures
 
 ```c
-// WARNING: x86-only code
 #ifdef __x86_64__
-    int x = 1;
+    // Missing RISC-V implementation
 #endif
 ```
 
-**Why it's a problem**: RISC-V-specific code path missing.
+**Detection**: Unbalanced architecture-specific code paths.
 
----
+## Risk Scoring
 
-## 📊 Risk Scoring
+**Risk Score**: 0-100 (higher is better)
 
-Risk Score: **0-100** (higher is better)
+| Score | Status | Recommendation |
+|-------|--------|----------------|
+| 80-100 | RECOMMENDED | Ready to migrate |
+| 50-79 | NEEDS FIXES | Fix ERRORs first |
+| 0-49 | NOT RECOMMENDED | High risk of crashes |
 
-| Score | Meaning | Recommendation |
-|-------|---------|----------------|
-| **80-100** | Low risk | ✅ Ready to migrate |
-| **50-79** | Medium risk | ⚠️ Fix ERRORs first |
-| **0-49** | High risk | ❌ Not recommended |
-
-**Scoring**:
-- Start with 100 points
-- Each **ERROR**: -20 points
-- Each **WARNING**: -8 points
+**Scoring Method**:
+- Base score: 100
+- Each ERROR: -20 points
+- Each WARNING: -8 points
 - Build failure: -30 points
 
-## 🛠️ How it works
+## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│  1. Scan project                        │
-│     - Parse compile_commands.json       │
-│     - Collect C/C++ files               │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│  2. Static Analysis (libclang)         │
-│     - AST traversal                     │
-│     - Pattern matching                  │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│  3. Cross-compile Validation           │
-│     - riscv64-linux-gnu-gcc            │
-│     - Extract build errors             │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│  4. Generate Report                     │
-│     - Terminal output (Rich)            │
-│     - Markdown file                     │
-└─────────────────────────────────────────┘
+Input: C/C++ project
+  │
+  ├─> 1. Project Scanner
+  │     - Parse compile_commands.json
+  │     - Collect source files
+  │
+  ├─> 2. Static Analysis (libclang)
+  │     - AST traversal
+  │     - Pattern matching
+  │     - Type checking
+  │
+  ├─> 3. Cross-compilation Validation (optional)
+  │     - riscv64-linux-gnu-gcc
+  │     - Build error extraction
+  │
+  └─> 4. Report Generation
+        - Console output (Rich)
+        - Markdown file
+        - Maintainer format (one screen)
 ```
 
-## 📋 Requirements & Platform Support
+## Requirements
 
 ### Platform Support
 
-| Platform | Support Status | Notes |
-|----------|---------------|-------|
-| **Linux** | ✅ Fully Supported | Primary development platform |
-| **macOS** | ✅ Fully Supported | Tested and verified |
-| **Windows + WSL 2** | ✅ Recommended | Best Windows experience |
-| **Windows Native** | ⚠️ Experimental | Complex setup, not recommended |
-
-**Windows users**: See [Windows Installation Guide](docs/INSTALL_WINDOWS.md) (WSL 2 recommended)
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | Primary development platform |
+| macOS | Supported | Tested and verified |
+| Windows + WSL 2 | Supported | Recommended for Windows |
+| Windows Native | Experimental | Complex setup |
 
 ### System Requirements
 
 - Python 3.10+
-- clang + libclang
+- clang + libclang (for AST parsing)
 - riscv64-linux-gnu-gcc (optional, for cross-compilation validation)
 
-### Install on Ubuntu/Debian
+### Installation
 
+**Ubuntu/Debian**:
 ```bash
-sudo apt update
-sudo apt install -y clang llvm libclang-dev
-sudo apt install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+sudo apt install clang llvm libclang-dev
+sudo apt install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
 ```
 
-### Install on macOS
-
+**macOS**:
 ```bash
 brew install llvm
 brew install riscv-tools
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Installation Guide](docs/INSTALL.md)
-- [Windows Installation Guide](docs/INSTALL_WINDOWS.md) (WSL 2 recommended)
+- [Windows Installation](docs/INSTALL_WINDOWS.md)
 - [User Guide](docs/USAGE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Contributing](docs/CONTRIBUTING.md)
 
-## 🤝 Contributing
+## Real-World Testing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
+### htop Analysis (2025-01)
+
+**Project**: [htop](https://github.com/htop-dev/htop) - Interactive process viewer
+
+**Analysis**:
+- Codebase: 127 C files, 44,524 lines
+- Analysis time: ~5 minutes
+- Issues found: 1 alignment issue (false positive)
+
+**Outcome**:
+- Tool generated initial report with verbose format and emojis
+- Maintainer feedback: "too verbose", "lots of emoji", "reads like AI generated"
+- Tool improved based on feedback:
+  - Implemented maintainer-style one-screen reports
+  - Removed all emojis
+  - Added evidence levels (E0/E1/E2)
+  - Enforced single language
+- False positive root cause: Tool hardcoded project-specific functions
+- Solution: Implemented `__attribute__((malloc))` detection
+
+**Issue**: [htop#1858](https://github.com/htop-dev/htop/issues/1858)
+
+**Maintainers**: BenBE, Explorer09
+
+## Contributing
+
+Contributions welcome. See [CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ```bash
 # Development setup
@@ -257,126 +256,91 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
-# Run linter
+# Lint
 black riscv_check/
 mypy riscv_check/
 ```
 
-## 🎓 Use Cases
-
-### ⭐ Case Study: htop (Real-World Example)
-
-**Project**: [htop](https://github.com/htop-dev/htop) - Interactive process viewer (3.8k+ GitHub stars)
-
-**Analysis Results**:
-- **Codebase**: 127 C files, 44,524 lines of code
-- **Analysis Time**: ~5 minutes
-- **Risk Score**: 72/100 → 92/100 (after fix)
-
-**Issues Discovered**:
-```bash
-$ riscv-check htop/
-
-✓ Found 127 files
-Risk Score: 72/100 - NEEDS FIXES
-
-Critical Issues:
-  🔴 XUtils.c:163 [ALIGN_PTR_CAST]
-     → void* to char** cast may cause misaligned access
-
-Warnings:
-  🟡 darwin/Platform.c:166 [ARCH_MACRO]
-     → x86_64-specific conditional compilation
-```
-
-**Impact**:
-- ✅ Found 1 critical alignment issue in 10 minutes
-- ✅ Provided actionable fix (use temporary variable)
-- ✅ Prevented potential SIGBUS crashes on RISC-V
-- ✅ Patch submitted upstream: [htop#xxx](https://github.com/htop-dev/htop/pull/xxx)
-
-**Testimonial**:
-> "riscv-check identified a real issue that would have caused crashes on RISC-V hardware.
-> The analysis was fast, accurate, and the fix suggestions were spot on."
-> — [Case study available](https://github.com/huziwoaini221/riscv-check/examples/htop)
-
----
-
-### Case 2: Network Stack Porting
-
-**Project**: Linux network subsystem
-**Result**: Found 12 packed struct issues
-**Impact**: Prevented runtime crashes on RISC-V hardware
-
----
-
-### Case 3: Cryptography Library
-
-**Project**: OpenSSL
-**Result**: Detected 50+ x86 inline assembly blocks
-**Impact**: Saved 2 weeks of manual auditing
-
----
-
-### Case 4: Embedded Firmware
-
-**Project**: IoT device firmware
-**Result**: Found 3 critical alignment bugs
-**Impact**: Fixed before hardware deployment
-
-## 🗺️ Roadmap
+## Roadmap
 
 ### v0.1.0 (Current)
-- ✅ Misaligned pointer cast detection
-- ✅ Packed struct access detection
-- ✅ Inline assembly detection
-- ✅ Architecture-specific macros
-- ✅ Cross-compilation validation (riscv64-linux-gnu-gcc)
+- [x] Misaligned pointer cast detection
+- [x] Packed struct access detection
+- [x] Inline assembly detection
+- [x] Architecture-specific macros
+- [x] Cross-compilation validation
+- [x] Maintainer-style reports
+- [x] Evidence level classification
 
 ### v0.2.0 (Planned)
 - [ ] QEMU dynamic validation
-- [ ] Auto-fix suggestions
-- [ ] CI/CD integration
-- [ ] More detection rules (atomics, cache coherence)
+- [ ] Integration with CI/CD pipelines
+- [ ] Additional detection rules (atomics, cache coherence)
 
 ### v0.3.0 (Future)
-- [ ] Web UI
+- [ ] Web UI for report viewing
 - [ ] Team collaboration features
-- [ ] Enterprise support
 
-## 💡 FAQ
+## FAQ
 
-**Q: How accurate is it?**
-A: MVP targets >90% precision on ERROR level. False positives are minimized at the cost of some false negatives.
+**Q: How accurate is the detection?**
+
+A: Targets >90% precision on ERROR level issues. Minimizes false positives through:
+- Pointer source tracking
+- `__attribute__((malloc))` detection
+- Cross-compilation validation
 
 **Q: Can it handle large projects?**
-A: Yes, tested on projects with 10,000+ files. Scales linearly with project size.
 
-**Q: Does it modify my code?**
-A: No, riscv-check is read-only. It only analyzes and reports.
+A: Tested on projects with 10,000+ files. Scales linearly with project size.
 
-**Q: What if I don't have compile_commands.json?**
-A: riscv-check works without it but with reduced accuracy. Consider generating it with `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
+**Q: Does it modify code?**
 
-## 📄 License
+A: No. Read-only analysis and reporting.
+
+**Q: What if compile_commands.json is missing?**
+
+A: Tool works without it but with reduced accuracy. Generate with:
+```bash
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+```
+
+## Acknowledgments
+
+Special thanks to the htop project maintainers for professional feedback that significantly improved this tool:
+
+- **BenBE** - Detailed critique of report format and quality standards
+  - Feedback on report verbosity, emoji usage, and AI-generated appearance
+  - Led to implementation of maintainer-style one-screen reports
+
+- **Explorer09** - Technical suggestions for detection accuracy
+  - Suggested using `__attribute__((malloc))` instead of hardcoding
+  - Pointed out inconsistency between explicit and implicit cast detection
+
+Their feedback drove these improvements:
+- Commit `b9c209d`: Dynamic `__attribute__((malloc))` detection
+- Commit `5a5cde9`: Implicit cast detection
+- Commit `e91e889`: Maintainer report format, evidence levels, quality validation
+
+### Dependencies
+
+- [clang](https://clang.llvm.org/) - C/C++ parsing and AST traversal
+- [click](https://click.palletsprojects.com/) - CLI framework
+- [rich](https://rich.readthedocs.io/) - Terminal output formatting
+- [RISC-V International](https://riscv.org/) - Architecture specifications
+
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🙏 Acknowledgments
+## Support
 
-- [clang](https://clang.llvm.org/) - C/C++ parsing and AST
-- [click](https://click.palletsprojects.com/) - CLI framework
-- [rich](https://rich.readthedocs.io/) - Terminal output
-- [RISC-V International](https://riscv.org/) - RISC-V specifications
-
-## 📞 Support
-
-- 🐛 [Report bugs](https://github.com/huziwoaini221/riscv-check/issues)
-- 💡 [Feature requests](https://github.com/huziwoaini221/riscv-check/discussions)
-- 📧 Email: thelazypig321@qq.com
+- [Report bugs](https://github.com/huziwoaini221/riscv-check/issues)
+- [Feature requests](https://github.com/huziwoaini221/riscv-check/discussions)
+- Email: thelazypig321@qq.com
 
 ---
 
-**Made with ❤️ for the RISC-V community**
+**Static analysis for RISC-V migration**
 
-If you find riscv-check useful, please consider ⭐ starring the repo!
+If you find this tool useful, please consider starring the repo!
