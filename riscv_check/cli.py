@@ -10,6 +10,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRe
 
 from riscv_check.analyzers.alignment import AlignmentAnalyzer
 from riscv_check.analyzers.archdeps import ArchDepAnalyzer
+from riscv_check.compiler.cross_compile import CrossCompileValidator
 from riscv_check.core.project import Project, ProjectScanner
 from riscv_check.report.model import Report, Severity
 from riscv_check.report.render_console import ConsoleRenderer
@@ -131,20 +132,72 @@ def main(
 
             progress.update(task, advance=1)
 
-    # Step 3: Generate report
+    # Step 3: Cross-compilation validation (if not skipped)
+    build_success = True
+    build_errors = []
+
+    if not no_compile:
+        console.print()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "[yellow]Cross-compiling for RISC-V...",
+                total=len(project.files),
+            )
+
+            validator = CrossCompileValidator(verbose=verbose)
+            c_files = [
+                f for f in project.files
+                if f.suffix in {".c", ".cpp", ".cc", ".cxx"}
+            ]
+
+            for file in c_files:
+                result = validator.check_file(file)
+
+                if result.skipped:
+                    # Compiler not found, skip remaining files
+                    if verbose:
+                        console.print("[yellow]Cross-compiler not found, skipping validation[/yellow]")
+                    break
+
+                if not result.success:
+                    build_success = False
+                    for error in result.errors:
+                        if error.strip():
+                            build_errors.append(f"{file.relative_to(project_path)}: {error}")
+
+                if result.warnings and verbose:
+                    for warning in result.warnings:
+                        console.print(f"[yellow]  Warning: {warning}[/yellow]")
+
+                progress.update(task, advance=1)
+
+            if build_success:
+                console.print("[green]✓[/green] Cross-compilation [green]successful[/green]")
+            elif build_errors:
+                console.print("[red]✗[/red] Cross-compilation [red]failed[/red]")
+
+    # Step 4: Generate report
     console.print()
 
     report = Report.from_analysis_results(
         project_path=str(project_path),
         files_scanned=len(project.files),
         issues=all_issues,
-        build_success=True,  # TODO: implement cross-compilation check
+        build_success=build_success,
+        build_errors=build_errors if build_errors else None,
     )
 
-    # Step 4: Output to console
+    # Step 5: Output to console
     ConsoleRenderer(console).render(report)
 
-    # Step 5: Save to file if requested
+    # Step 6: Save to file if requested
     if output:
         try:
             MarkdownRenderer().render(report, output)

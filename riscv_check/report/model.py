@@ -59,6 +59,8 @@ class Report(BaseModel):
         summary: Human-readable summary
         recommendations: List of actionable recommendations
         generated_at: When the report was generated
+        build_success: Whether cross-compilation succeeded
+        build_errors: Optional list of cross-compilation errors
     """
 
     project_path: str = Field(..., description="Project root path")
@@ -71,6 +73,10 @@ class Report(BaseModel):
     )
     generated_at: datetime = Field(
         default_factory=datetime.now, description="Report generation timestamp"
+    )
+    build_success: bool = Field(default=True, description="Cross-compilation succeeded")
+    build_errors: Optional[List[str]] = Field(
+        default=None, description="Cross-compilation error messages"
     )
 
     @property
@@ -105,6 +111,7 @@ class Report(BaseModel):
         files_scanned: int,
         issues: List[Issue],
         build_success: bool = True,
+        build_errors: Optional[List[str]] = None,
     ) -> "Report":
         """Create a report from analysis results.
 
@@ -113,6 +120,7 @@ class Report(BaseModel):
             files_scanned: Number of files analyzed
             issues: List of issues found
             build_success: Whether cross-compilation succeeded
+            build_errors: Optional list of compilation error messages
 
         Returns:
             A complete Report instance
@@ -174,4 +182,6 @@ class Report(BaseModel):
             issues=issues,
             summary=summary,
             recommendations=recommendations,
+            build_success=build_success,
+            build_errors=build_errors,
         )

@@ -331,7 +331,7 @@ Warnings:
 - ✅ Packed struct access detection
 - ✅ Inline assembly detection
 - ✅ Architecture-specific macros
-- ⏳ Cross-compilation validation (in progress)
+- ✅ Cross-compilation validation (riscv64-linux-gnu-gcc)
 
 ### v0.2.0 (Planned)
 - [ ] QEMU dynamic validation
