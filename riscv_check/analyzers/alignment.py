@@ -48,19 +48,14 @@ class AlignmentAnalyzer(BaseAnalyzer):
         TypeKind.POINTER: 8,  # Assuming 64-bit
     }
 
-    # Functions that return properly aligned pointers (safe to cast)
+    # Standard library functions that return properly aligned pointers
+    # Note: Project-specific functions (like xRealloc) should be detected
+    # via __attribute__((malloc)) instead of hardcoding
     SAFE_ALLOC_FUNCTIONS = {
         "malloc",
         "calloc",
         "realloc",
         "aligned_alloc",
-        "xMalloc",
-        "xCalloc",
-        "xRealloc",
-        "xReallocArray",
-        "xReallocArrayZero",
-        "xStrdup",
-        "xStrndup",
     }
 
     def __init__(self, compile_db: Optional[CompilationDatabase] = None, verbose: bool = False):
@@ -72,6 +67,7 @@ class AlignmentAnalyzer(BaseAnalyzer):
         """
         super().__init__(compile_db)
         self.packed_structs: Set[str] = set()
+        self.malloc_functions: Set[str] = set()  # Functions with malloc attribute
         self.verbose = verbose
 
         # Ensure libclang is configured
@@ -102,8 +98,9 @@ class AlignmentAnalyzer(BaseAnalyzer):
         Yields:
             Issue objects found in the file
         """
-        # Reset packed struct tracking for this file
+        # Reset tracking sets for this file
         self.packed_structs.clear()
+        self.malloc_functions.clear()
 
         compile_args = self._get_compile_args(file)
 
@@ -134,6 +131,10 @@ class AlignmentAnalyzer(BaseAnalyzer):
         Yields:
             Issues found at this node or its children
         """
+        # Track functions with malloc attribute
+        if node.kind == CursorKind.FUNCTION_DECL:
+            self._check_malloc_attribute(node)
+
         # Check for explicit pointer casts
         if node.kind in {
             CursorKind.CSTYLE_CAST_EXPR,
@@ -163,6 +164,33 @@ class AlignmentAnalyzer(BaseAnalyzer):
         # Recursively visit children
         for child in node.get_children():
             yield from self._visit_node(child)
+
+    def _check_malloc_attribute(self, func_decl) -> None:
+        """Check if a function has the malloc attribute.
+
+        Functions with __attribute__((malloc)) return pointers that don't
+        alias with any other pointers and are typically aligned.
+
+        Args:
+            func_decl: Function declaration node
+        """
+        try:
+            # Check for malloc attribute in the function's attributes
+            for attr in func_decl.get_children():
+                if attr.kind == CursorKind.ANNOTATE_ATTR:
+                    # Check if this is __attribute__((malloc))
+                    attr_text = attr.spelling
+                    if "malloc" in attr_text.lower():
+                        self.malloc_functions.add(func_decl.spelling)
+                        if self.verbose:
+                            import sys
+                            print(
+                                f"[DEBUG] Found malloc attribute on {func_decl.spelling}()",
+                                file=sys.stderr
+                            )
+                        break
+        except Exception:
+            pass
 
     def _check_pointer_cast(self, cast_expr) -> Optional[Issue]:
         """Check for dangerous pointer casts.
@@ -235,8 +263,9 @@ class AlignmentAnalyzer(BaseAnalyzer):
         """Check if a node represents a pointer from a safe aligned allocator.
 
         This reduces false positives by ignoring casts from:
-        - malloc(), calloc(), realloc(), aligned_alloc()
-        - xMalloc(), xCalloc(), xRealloc(), etc. (project-specific wrappers)
+        - Standard library functions (malloc, calloc, realloc, aligned_alloc)
+        - Functions with __attribute__((malloc)) (dynamically detected)
+        - Compiler-guaranteed aligned allocators
 
         Args:
             node: AST node to check
@@ -251,12 +280,25 @@ class AlignmentAnalyzer(BaseAnalyzer):
                 children = list(node.get_children())
                 if children and children[0].kind == CursorKind.DECL_REF_EXPR:
                     func_name = children[0].spelling
+
+                    # Check standard library functions
                     if func_name in self.SAFE_ALLOC_FUNCTIONS:
                         if self.verbose:
                             import sys
                             print(
                                 f"[DEBUG] Skipping cast from {func_name}() - "
-                                f"returns aligned pointer",
+                                f"standard allocator returns aligned pointer",
+                                file=sys.stderr
+                            )
+                        return True
+
+                    # Check functions with malloc attribute (dynamically detected)
+                    if func_name in self.malloc_functions:
+                        if self.verbose:
+                            import sys
+                            print(
+                                f"[DEBUG] Skipping cast from {func_name}() - "
+                                f"has __attribute__((malloc))",
                                 file=sys.stderr
                             )
                         return True
