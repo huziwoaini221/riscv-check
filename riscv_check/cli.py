@@ -48,6 +48,23 @@ console = Console()
     type=str,
     help="Ignore specific rules (e.g., ALIGN_PTR_CAST)",
 )
+@click.option(
+    "--report-style",
+    type=click.Choice(['verbose', 'concise', 'minimal']),
+    default='concise',
+    help="Report style: verbose (detailed), concise (standard, < 2 screens), minimal (bug report only)"
+)
+@click.option(
+    "--language",
+    type=click.Choice(['en', 'zh']),
+    default='en',
+    help="Report language (en or zh, no mixing)"
+)
+@click.option(
+    "--no-confirm",
+    is_flag=True,
+    help="Skip confirmation and submit directly (NOT RECOMMENDED)"
+)
 @click.version_option(version="0.1.0")
 def main(
     project_path: Path,
@@ -55,6 +72,9 @@ def main(
     no_compile: bool,
     verbose: bool,
     ignore: tuple,
+    report_style: str,
+    language: str,
+    no_confirm: bool,
 ):
     """RISC-V migration risk detector for C/C++ projects.
 
@@ -200,11 +220,24 @@ def main(
     # Step 6: Save to file if requested
     if output:
         try:
-            MarkdownRenderer().render(report, output)
+            # Pass report_style and language to renderer
+            MarkdownRenderer(style=report_style, language=language).render(report, output)
             console.print(f"\n[green]✓[/green] Full report saved to: [cyan]{output}[/cyan]")
         except Exception as e:
             console.print(f"[red]Error saving report:[/red] {e}")
             sys.exit(1)
+
+    # Step 7: Confirmation if requested
+    if not no_confirm and output:
+        console.print()
+        console.print("[yellow]=== Report Checklist ===[/yellow]")
+        console.print(f"✓ Report style: {report_style}")
+        console.print(f"✓ Language: {language}")
+        console.print(f"✓ Issues found: {len(all_issues)}")
+
+        if not click.confirm("\nSubmit this report?"):
+            console.print("[yellow]Report generation cancelled.[/yellow]")
+            sys.exit(0)
 
     # Exit with error code if issues found
     error_count = report.error_count
