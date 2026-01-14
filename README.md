@@ -215,31 +215,64 @@ brew install riscv-tools
 - [Architecture](docs/ARCHITECTURE.md)
 - [Contributing](docs/CONTRIBUTING.md)
 
-## Real-World Testing
+## Learning Project: htop (2025-01)
 
-### htop Analysis (2025-01)
+**Note**: This section describes a learning experience, not a production deployment.
 
-**Project**: [htop](https://github.com/htop-dev/htop) - Interactive process viewer
+### Background
 
-**Analysis**:
-- Codebase: 127 C files, 44,524 lines
-- Analysis time: ~5 minutes
-- Issues found: 1 alignment issue (false positive)
+As an MVP-stage tool, riscv-check was tested on [htop](https://github.com/htop-dev/htop) - a well-maintained C project - to understand RISC-V migration challenges in real-world codebases.
 
-**Outcome**:
-- Tool generated initial report with verbose format and emojis
-- Maintainer feedback: "too verbose", "lots of emoji", "reads like AI generated"
-- Tool improved based on feedback:
-  - Implemented maintainer-style one-screen reports
+### Analysis Details
+
+**Project**: htop - Interactive process viewer
+- **Codebase**: 127 C files, 44,524 lines
+- **Analysis time**: ~5 minutes
+- **Result**: 1 alignment issue detected (later confirmed as false positive)
+
+### Tool Improvement Journey
+
+**Initial Issue**:
+- Tool generated verbose report with emojis
+- Flagged `xRealloc()` function as potential issue
+- Issue submitted: [htop#1858](https://github.com/htop-dev/htop/issues/1858)
+
+**Maintainer Feedback**:
+BenBE and Explorer09 provided professional feedback:
+- **Report quality**: "too verbose", "lots of emoji", "reads like AI generated"
+- **Technical accuracy**: Suggested using `__attribute__((malloc))` instead of hardcoding functions
+- **Detection consistency**: Pointed out missing implicit cast detection
+
+**Improvements Made**:
+- Commit `b9c209d`: Implemented dynamic `__attribute__((malloc))` detection
+- Commit `5a5cde9`: Added implicit cast detection for consistency
+- Commit `e91e889`: Complete report format overhaul
+  - Maintainer-style one-screen reports
   - Removed all emojis
   - Added evidence levels (E0/E1/E2)
-  - Enforced single language
-- False positive root cause: Tool hardcoded project-specific functions
-- Solution: Implemented `__attribute__((malloc))` detection
+  - Single language enforcement
 
-**Issue**: [htop#1858](https://github.com/htop-dev/htop/issues/1858)
+### Lessons Learned
 
-**Maintainers**: BenBE, Explorer09
+1. **False Positives**: The `xRealloc()` case was NOT a real issue because it internally calls `realloc()` which returns aligned memory per C standard.
+
+2. **Tool Maturity**: Early versions had hardcoded project-specific functions. Now uses compiler-standard attributes for portability.
+
+3. **Report Quality**: Maintainer-friendly reports require:
+   - Conciseness (one screen)
+   - No emojis or marketing language
+   - Evidence-based reasoning
+   - Professional technical writing
+
+### Acknowledgments
+
+Special thanks to htop maintainers:
+- **BenBE** - Professional critique of report quality and format standards
+- **Explorer09** - Technical suggestions for detection accuracy
+
+Their feedback significantly improved this tool. See detailed response in [docs/htop_issue_reply.md](docs/htop_issue_reply.md).
+
+**Note**: The issue was closed as a false positive. The htop project had no actual alignment issues.
 
 ## Contributing
 
@@ -263,7 +296,7 @@ mypy riscv_check/
 
 ## Roadmap
 
-### v0.1.0 (Current)
+### v0.1.0 (Current - MVP)
 - [x] Misaligned pointer cast detection
 - [x] Packed struct access detection
 - [x] Inline assembly detection
@@ -285,7 +318,7 @@ mypy riscv_check/
 
 **Q: How accurate is the detection?**
 
-A: Targets >90% precision on ERROR level issues. Minimizes false positives through:
+A: MVP targets >90% precision on ERROR level. False positives still occur. Tool uses:
 - Pointer source tracking
 - `__attribute__((malloc))` detection
 - Cross-compilation validation
@@ -307,20 +340,14 @@ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 ## Acknowledgments
 
-Special thanks to the htop project maintainers for professional feedback that significantly improved this tool:
+### Maintainer Feedback
 
-- **BenBE** - Detailed critique of report format and quality standards
-  - Feedback on report verbosity, emoji usage, and AI-generated appearance
-  - Led to implementation of maintainer-style one-screen reports
+This tool benefited significantly from feedback by open source maintainers:
 
-- **Explorer09** - Technical suggestions for detection accuracy
-  - Suggested using `__attribute__((malloc))` instead of hardcoding
-  - Pointed out inconsistency between explicit and implicit cast detection
+- **BenBE** (htop) - Report quality standards and maintainer expectations
+- **Explorer09** (htop) - Technical accuracy and detection methodology
 
-Their feedback drove these improvements:
-- Commit `b9c209d`: Dynamic `__attribute__((malloc))` detection
-- Commit `5a5cde9`: Implicit cast detection
-- Commit `e91e889`: Maintainer report format, evidence levels, quality validation
+Their professional feedback drove major improvements in report format and detection accuracy.
 
 ### Dependencies
 
