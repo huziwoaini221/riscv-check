@@ -15,6 +15,7 @@ from riscv_check.core.project import Project, ProjectScanner
 from riscv_check.report.model import Report, Severity
 from riscv_check.report.render_console import ConsoleRenderer
 from riscv_check.report.render_markdown import MarkdownRenderer
+from riscv_check.report.validator import ReportValidator
 
 # Default console
 console = Console()
@@ -50,9 +51,9 @@ console = Console()
 )
 @click.option(
     "--report-style",
-    type=click.Choice(['verbose', 'concise', 'minimal']),
-    default='concise',
-    help="Report style: verbose (detailed), concise (standard, < 2 screens), minimal (bug report only)"
+    type=click.Choice(['verbose', 'concise', 'minimal', 'maintainer']),
+    default='maintainer',
+    help="Report style: maintainer (one screen, professional), verbose (detailed), concise (standard), minimal (bug report only)"
 )
 @click.option(
     "--language",
@@ -97,7 +98,7 @@ def main(
             console.print(f"[red]Error scanning project:[/red] {e}")
             sys.exit(1)
 
-    console.print(f"[green]✓[/green] Found {len(project.files)} files")
+    console.print(f"[green][OK][/green] Found {len(project.files)} files")
 
     if not project.files:
         console.print("[yellow]No C/C++ files found in project.[/yellow]")
@@ -199,9 +200,9 @@ def main(
                 progress.update(task, advance=1)
 
             if build_success:
-                console.print("[green]✓[/green] Cross-compilation [green]successful[/green]")
+                console.print("[green][OK][/green] Cross-compilation [green]successful[/green]")
             elif build_errors:
-                console.print("[red]✗[/red] Cross-compilation [red]failed[/red]")
+                console.print("[red][FAIL][/red] Cross-compilation [red]failed[/red]")
 
     # Step 4: Generate report
     console.print()
@@ -222,7 +223,25 @@ def main(
         try:
             # Pass report_style and language to renderer
             MarkdownRenderer(style=report_style, language=language).render(report, output)
-            console.print(f"\n[green]✓[/green] Full report saved to: [cyan]{output}[/cyan]")
+
+            # Read back and validate quality
+            if verbose:
+                console.print("\n[yellow]Validating report quality...[/yellow]")
+
+            report_content = output.read_text()
+
+            is_valid, warnings = ReportValidator.validate_report_quality(
+                report_content,
+                check_links=True,
+                max_screens=2 if report_style == 'maintainer' else 5
+            )
+
+            if warnings:
+                console.print("[yellow]Report quality warnings:[/yellow]")
+                for warning in warnings:
+                    console.print(f"  - {warning}")
+
+            console.print(f"\n[green][OK][/green] Full report saved to: [cyan]{output}[/cyan]")
         except Exception as e:
             console.print(f"[red]Error saving report:[/red] {e}")
             sys.exit(1)
@@ -231,9 +250,9 @@ def main(
     if not no_confirm and output:
         console.print()
         console.print("[yellow]=== Report Checklist ===[/yellow]")
-        console.print(f"✓ Report style: {report_style}")
-        console.print(f"✓ Language: {language}")
-        console.print(f"✓ Issues found: {len(all_issues)}")
+        console.print(f"[OK] Report style: {report_style}")
+        console.print(f"[OK] Language: {language}")
+        console.print(f"[OK] Issues found: {len(all_issues)}")
 
         if not click.confirm("\nSubmit this report?"):
             console.print("[yellow]Report generation cancelled.[/yellow]")

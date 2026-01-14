@@ -11,10 +11,11 @@ from riscv_check.report.model import Report, Issue, Severity
 class ConsoleRenderer:
     """Renderer for console output using Rich."""
 
-    EMOJI = {
-        Severity.ERROR: "🔴",
-        Severity.WARNING: "🟡",
-        Severity.INFO: "🔵",
+    # Text indicators (no emojis per P0-3 requirement)
+    SEVERITY_TEXT = {
+        Severity.ERROR: "[ERROR]",
+        Severity.WARNING: "[WARNING]",
+        Severity.INFO: "[INFO]",
     }
 
     def __init__(self, console: Console = None):
@@ -73,9 +74,9 @@ class ConsoleRenderer:
             f"Risk Score: [{score_color}]{report.risk_score}/100[/ {score_color}] - {report.status}\n"
             f"\n"
             f"Summary:\n"
-            f"  {self.EMOJI[Severity.ERROR]} ERROR: {error_count} issues\n"
-            f"  {self.EMOJI[Severity.WARNING]} WARN: {warn_count} issues\n"
-            f"  {self.EMOJI[Severity.INFO]} INFO: {info_count} issues"
+            f"  {self.SEVERITY_TEXT[Severity.ERROR]} ERROR: {error_count} issues\n"
+            f"  {self.SEVERITY_TEXT[Severity.WARNING]} WARNING: {warn_count} issues\n"
+            f"  {self.SEVERITY_TEXT[Severity.INFO]} INFO: {info_count} issues"
         )
 
         panel = Panel(
@@ -138,14 +139,14 @@ class ConsoleRenderer:
             location += f":{issue.column}"
 
         self.console.print(
-            f"  {self.EMOJI[issue.severity]} "
+            f"  {self.SEVERITY_TEXT[issue.severity]} "
             f"[cyan]{location}[/cyan] "
             f"[bold]{issue.rule_id}[/bold]"
         )
         self.console.print(f"      → {issue.message}")
 
         if issue.suggestion:
-            self.console.print(f"      💡 {issue.suggestion}")
+            self.console.print(f"      Suggestion: {issue.suggestion}")
 
         self.console.print()
 

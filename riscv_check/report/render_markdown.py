@@ -4,7 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from riscv_check.report.model import Report, Issue, Severity
+from riscv_check.report.model import Report, Issue, Severity, EvidenceLevel
+from riscv_check.report.render_maintainer import MaintainerRenderer
 
 
 class MarkdownRenderer:
@@ -79,6 +80,10 @@ class MarkdownRenderer:
             lines = self._render_verbose(report)
         elif self.style == 'minimal':
             lines = self._render_minimal(report)
+        elif self.style == 'maintainer':
+            # Use MaintainerRenderer for maintainer style
+            MaintainerRenderer().render(report.issues, output_path)
+            return
         else:  # concise
             lines = self._render_concise(report)
 

@@ -15,6 +15,14 @@ class Severity(str, Enum):
     INFO = "INFO"
 
 
+class EvidenceLevel(str, Enum):
+    """Evidence level for maintainer reports."""
+
+    E0_STATIC = "E0"  # Pure static suspicion without code context
+    E1_ABI = "E1"     # ABI reasoning + static proof with code
+    E2_CRASH = "E2"   # Reproduced crash + trace
+
+
 class Issue(BaseModel):
     """A single issue found during analysis.
 
@@ -28,6 +36,7 @@ class Issue(BaseModel):
         suggestion: How to fix the issue
         verification: Optional method to verify the fix
         code_snippet: Optional relevant code snippet
+        evidence_level: Optional evidence level (E0/E1/E2) for maintainer reports
     """
 
     rule_id: str = Field(..., description="Rule identifier, e.g., ALIGN_PTR_CAST")
@@ -39,6 +48,9 @@ class Issue(BaseModel):
     suggestion: str = Field(..., description="How to fix the issue")
     verification: Optional[str] = Field(None, description="How to verify the fix")
     code_snippet: Optional[str] = Field(None, description="Relevant code snippet")
+    evidence_level: Optional[EvidenceLevel] = Field(
+        None, description="Evidence level for maintainer reports (E0/E1/E2)"
+    )
 
     def __str__(self) -> str:
         """String representation for display."""
