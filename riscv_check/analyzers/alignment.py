@@ -48,6 +48,21 @@ class AlignmentAnalyzer(BaseAnalyzer):
         TypeKind.POINTER: 8,  # Assuming 64-bit
     }
 
+    # Functions that return properly aligned pointers (safe to cast)
+    SAFE_ALLOC_FUNCTIONS = {
+        "malloc",
+        "calloc",
+        "realloc",
+        "aligned_alloc",
+        "xMalloc",
+        "xCalloc",
+        "xRealloc",
+        "xReallocArray",
+        "xReallocArrayZero",
+        "xStrdup",
+        "xStrndup",
+    }
+
     def __init__(self, compile_db: Optional[CompilationDatabase] = None, verbose: bool = False):
         """Initialize the analyzer.
 
@@ -157,7 +172,8 @@ class AlignmentAnalyzer(BaseAnalyzer):
             children = list(cast_expr.get_children())
             if not children:
                 return None
-            src_type = children[0].type
+            operand = children[0]
+            src_type = operand.type
             dst_type = cast_expr.type
         except Exception:
             return None
@@ -177,8 +193,13 @@ class AlignmentAnalyzer(BaseAnalyzer):
         src_align = self.ALIGNMENT_MAP.get(src_pointee.kind, 1)
         dst_align = self.ALIGNMENT_MAP.get(dst_pointee.kind, 1)
 
-        # Core rule: target alignment > source alignment is dangerous
+        # Core rule: target alignment > source alignment is potentially dangerous
         if dst_align > src_align:
+            # NEW: Check if the operand is from a safe memory allocation function
+            if self._is_safe_aligned_pointer(operand):
+                # This cast is safe - the pointer comes from an aligned allocator
+                return None
+
             location = cast_expr.location
             if location.file:
                 return Issue(
@@ -203,6 +224,59 @@ class AlignmentAnalyzer(BaseAnalyzer):
                 )
 
         return None
+
+    def _is_safe_aligned_pointer(self, node) -> bool:
+        """Check if a node represents a pointer from a safe aligned allocator.
+
+        This reduces false positives by ignoring casts from:
+        - malloc(), calloc(), realloc(), aligned_alloc()
+        - xMalloc(), xCalloc(), xRealloc(), etc. (project-specific wrappers)
+
+        Args:
+            node: AST node to check
+
+        Returns:
+            True if the pointer is from a safe allocator, False otherwise
+        """
+        # Case 1: Direct function call (e.g., (char**)malloc(...))
+        if node.kind == CursorKind.CALL_EXPR:
+            # Get the function being called
+            try:
+                children = list(node.get_children())
+                if children and children[0].kind == CursorKind.DECL_REF_EXPR:
+                    func_name = children[0].spelling
+                    if func_name in self.SAFE_ALLOC_FUNCTIONS:
+                        if self.verbose:
+                            import sys
+                            print(
+                                f"[DEBUG] Skipping cast from {func_name}() - "
+                                f"returns aligned pointer",
+                                file=sys.stderr
+                            )
+                        return True
+            except Exception:
+                pass
+
+        # Case 2: UnaryOperator on function result (e.g., *(char**)malloc(...))
+        # This is rare but possible
+        try:
+            if node.kind == CursorKind.UNARY_OPERATOR:
+                children = list(node.get_children())
+                if children and children[0].kind == CursorKind.CALL_EXPR:
+                    return self._is_safe_aligned_pointer(children[0])
+        except Exception:
+            pass
+
+        # Case 3: ParenExpr wrapping a safe expression
+        try:
+            if node.kind == CursorKind.PAREN_EXPR:
+                children = list(node.get_children())
+                if children:
+                    return self._is_safe_aligned_pointer(children[0])
+        except Exception:
+            pass
+
+        return False
 
     def _check_packed_struct(self, struct_decl) -> None:
         """Check if struct is packed and record it.
