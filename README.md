@@ -1,5 +1,7 @@
 # riscv-check
 
+[English](README.md) | [简体中文](README_zh.md)
+
 > **Automated RISC-V migration risk detector for C/C++ projects**
 
 [![PyPI version](https://badge.fury.io/py/riscv-check.svg)](https://pypi.org/project/riscv-check/)
