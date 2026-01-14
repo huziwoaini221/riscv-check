@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-**Static analysis tool for detecting RISC-V migration issues in C/C++ projects**
+**Static analysis tool for detecting potential RISC-V migration issues in C/C++ projects**
 
 [![PyPI version](https://badge.fury.io/py/riscv-check.svg)](https://pypi.org/project/riscv-check/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -10,9 +10,9 @@
 
 ## Overview
 
-`riscv-check` scans C/C++ codebases and detects patterns that cause issues on RISC-V architecture:
+`riscv-check` scans C/C++ codebases and detects patterns that **may** cause issues on architectures with strict alignment requirements:
 
-- Misaligned memory access (SIGBUS on RISC-V)
+- Potential misaligned memory access
 - Architecture-specific inline assembly
 - Missing RISC-V code paths
 - Unaligned pointer casts
@@ -21,20 +21,20 @@
 
 ### The Problem
 
-This code works on x86_64 but crashes on RISC-V:
+This code **may work** on x86_64 but **can result in undefined behavior** on architectures with strict alignment requirements:
 
 ```c
 char *p = malloc(10);
 p++;
-int *i = (int*)p;  // Misaligned address
-*i = 42;  // SIGBUS on RISC-V
+int *i = (int*)p;  // Potentially misaligned address
+*i = 42;  // May result in alignment fault
 ```
 
-**Why**: x86_64 tolerates misalignment. RISC-V requires strict alignment for int (4-byte).
+**Why**: x86_64 tolerates misalignment in many cases. RISC-V requires strict alignment for types like int (typically 4-byte).
 
 ### The Solution
 
-`riscv-check` detects these issues **before** migration through static analysis:
+`riscv-check` detects these patterns **before** migration through static analysis:
 
 ```bash
 $ riscv-check /path/to/project
@@ -42,6 +42,8 @@ $ riscv-check /path/to/project
 [ERROR] src/network.c:128 ALIGN_PTR_CAST
   Casting char* to int* without alignment verification
 ```
+
+**Note**: This is a static analysis tool. Findings require human verification.
 
 ## Quick Start
 
@@ -80,14 +82,14 @@ riscv-check /path/to/project --no-compile
 
 ### 1. Misaligned Pointer Casts
 
-**Issue**: Casting pointers to stricter alignment requirements
+**Pattern**: Casting pointers to stricter alignment requirements
 
 ```c
-// ERROR: Will crash on RISC-V
+// Potential issue on strict-alignment architectures
 char *p = get_buffer();
 p++;  // May become misaligned
 int *i = (int*)p;  // Requires 4-byte alignment
-*i = 42;  // SIGBUS if misaligned
+*i = 42;  // Undefined behavior if misaligned
 ```
 
 **Detection**: AST-based static analysis tracking pointer sources and cast targets.
@@ -96,7 +98,7 @@ int *i = (int*)p;  // Requires 4-byte alignment
 
 ### 2. Packed Struct Access
 
-**Issue**: Accessing non-char members of packed structs
+**Pattern**: Accessing non-char members of packed structs
 
 ```c
 struct __attribute__((packed)) Packet {
@@ -104,7 +106,7 @@ struct __attribute__((packed)) Packet {
     int value;  // Misaligned field
 };
 
-int x = packet->value;  // SIGBUS on RISC-V
+int x = packet->value;  // May result in alignment fault
 ```
 
 **Detection**: Packed struct field access patterns.
@@ -113,10 +115,10 @@ int x = packet->value;  // SIGBUS on RISC-V
 
 ### 3. Inline Assembly
 
-**Issue**: Architecture-specific assembly code
+**Pattern**: Architecture-specific assembly code
 
 ```c
-// ERROR: x86-specific
+// Not portable across architectures
 __asm__ volatile("movq %rax, %rbx");
 ```
 
@@ -126,7 +128,7 @@ __asm__ volatile("movq %rax, %rbx");
 
 ### 4. Architecture Macros
 
-**Issue**: Code only compiled on specific architectures
+**Pattern**: Code only compiled on specific architectures
 
 ```c
 #ifdef __x86_64__
@@ -136,21 +138,25 @@ __asm__ volatile("movq %rax, %rbx");
 
 **Detection**: Unbalanced architecture-specific code paths.
 
-## Risk Scoring
+## Risk Assessment
 
-**Risk Score**: 0-100 (higher is better)
+**Risk Score**: 0-100 (heuristic, non-authoritative)
+
+The score provides a rough indication of migration readiness based on detected patterns. It is **not** a correctness guarantee.
 
 | Score | Status | Recommendation |
 |-------|--------|----------------|
-| 80-100 | RECOMMENDED | Ready to migrate |
-| 50-79 | NEEDS FIXES | Fix ERRORs first |
-| 0-49 | NOT RECOMMENDED | High risk of crashes |
+| 80-100 | LOW RISK | Fewer patterns detected |
+| 50-79 | MEDIUM RISK | Some ERROR-level patterns found |
+| 0-49 | HIGH RISK | Many ERROR-level patterns found |
 
-**Scoring Method**:
+**Scoring Method (heuristic)**:
 - Base score: 100
 - Each ERROR: -20 points
 - Each WARNING: -8 points
 - Build failure: -30 points
+
+**Important**: This is a heuristic scoring system. Actual migration readiness requires human review.
 
 ## Architecture
 
@@ -215,64 +221,57 @@ brew install riscv-tools
 - [Architecture](docs/ARCHITECTURE.md)
 - [Contributing](docs/CONTRIBUTING.md)
 
-## Learning Project: htop (2025-01)
+## Development Notes
 
-**Note**: This section describes a learning experience, not a production deployment.
+### Learning Experience: False Positive Case Study (2025-01)
 
-### Background
+**Note**: This section describes a learning experience from tool development.
 
-As an MVP-stage tool, riscv-check was tested on [htop](https://github.com/htop-dev/htop) - a well-maintained C project - to understand RISC-V migration challenges in real-world codebases.
+#### Background
 
-### Analysis Details
+During early development, this tool was tested on a medium-sized, well-maintained C codebase to understand real-world RISC-V migration patterns.
 
-**Project**: htop - Interactive process viewer
-- **Codebase**: 127 C files, 44,524 lines
+#### Analysis Details
+
+- **Codebase**: ~40K lines of C code
 - **Analysis time**: ~5 minutes
 - **Result**: 1 alignment issue detected (later confirmed as false positive)
 
-### Tool Improvement Journey
+#### Tool Improvement Journey
 
-**Initial Issue**:
+**Initial Finding**:
 - Tool generated verbose report with emojis
-- Flagged `xRealloc()` function as potential issue
-- Issue submitted: [htop#1858](https://github.com/htop-dev/htop/issues/1858)
+- Flagged a custom allocator function as potential issue
+- Issue submitted to project maintainers
 
 **Maintainer Feedback**:
-BenBE and Explorer09 provided professional feedback:
-- **Report quality**: "too verbose", "lots of emoji", "reads like AI generated"
-- **Technical accuracy**: Suggested using `__attribute__((malloc))` instead of hardcoding functions
-- **Detection consistency**: Pointed out missing implicit cast detection
+Project maintainers provided professional feedback:
+- **Report quality**: Too verbose, overly formatted
+- **Technical accuracy**: Suggested using compiler attributes instead of hardcoded function lists
+- **Detection consistency**: Noted inconsistent handling of explicit vs implicit casts
 
 **Improvements Made**:
-- Commit `b9c209d`: Implemented dynamic `__attribute__((malloc))` detection
-- Commit `5a5cde9`: Added implicit cast detection for consistency
-- Commit `e91e889`: Complete report format overhaul
+- Implemented dynamic `__attribute__((malloc))` detection
+- Added implicit cast detection for consistency
+- Complete report format overhaul:
   - Maintainer-style one-screen reports
-  - Removed all emojis
+  - Removed formatting decorations
   - Added evidence levels (E0/E1/E2)
   - Single language enforcement
 
-### Lessons Learned
+#### Lessons Learned
 
-1. **False Positives**: The `xRealloc()` case was NOT a real issue because it internally calls `realloc()` which returns aligned memory per C standard.
+1. **False Positives**: The flagged case was NOT a real issue because the allocator internally uses standard functions that return aligned memory per the C standard.
 
-2. **Tool Maturity**: Early versions had hardcoded project-specific functions. Now uses compiler-standard attributes for portability.
+2. **Tool Maturity**: Early versions had hardcoded assumptions about project-specific functions. Now uses compiler-standard attributes for portability.
 
 3. **Report Quality**: Maintainer-friendly reports require:
-   - Conciseness (one screen)
-   - No emojis or marketing language
+   - Conciseness
+   - Minimal formatting
    - Evidence-based reasoning
    - Professional technical writing
 
-### Acknowledgments
-
-Special thanks to htop maintainers:
-- **BenBE** - Professional critique of report quality and format standards
-- **Explorer09** - Technical suggestions for detection accuracy
-
-Their feedback significantly improved this tool. See detailed response in [docs/htop_issue_reply.md](docs/htop_issue_reply.md).
-
-**Note**: The issue was closed as a false positive. The htop project had no actual alignment issues.
+**Note**: The submitted issue was closed as a false positive. The analyzed project had no actual alignment issues. This experience drove significant tool improvements.
 
 ## Contributing
 
@@ -318,7 +317,7 @@ mypy riscv_check/
 
 **Q: How accurate is the detection?**
 
-A: MVP targets >90% precision on ERROR level. False positives still occur. Tool uses:
+A: The tool aims for high precision on ERROR-level findings, but false positives are expected, especially in early versions. All findings require human verification. Uses:
 - Pointer source tracking
 - `__attribute__((malloc))` detection
 - Cross-compilation validation
@@ -340,14 +339,11 @@ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 ## Acknowledgments
 
-### Maintainer Feedback
+I would like to thank contributors from an open source project for their technical feedback on alignment assumptions, allocator semantics, and report quality standards.
 
-This tool benefited significantly from feedback by open source maintainers:
+Their comments helped identify incorrect assumptions and guided significant improvements to this tool's detection methodology and reporting format.
 
-- **BenBE** (htop) - Report quality standards and maintainer expectations
-- **Explorer09** (htop) - Technical accuracy and detection methodology
-
-Their professional feedback drove major improvements in report format and detection accuracy.
+Any remaining mistakes are my own.
 
 ### Dependencies
 
